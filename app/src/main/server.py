@@ -1,4 +1,5 @@
 import os
+import sys
 import mysql.connector
 import flask
 import json
@@ -6,17 +7,6 @@ from MBTADAO.DBManager import DBManager
 
 server = flask.Flask(__name__)
 conn = None
-
-@server.route('/blogs')
-def listBlog():
-    global conn
-    rec = conn.query_titles()
-
-    result = []
-    for c in rec:
-        result.append(c)
-
-    return flask.jsonify({"response": result})
 
 @server.route('/subway-routes')
 def listRoutes():
@@ -63,5 +53,6 @@ def hello():
 
 
 if __name__ == '__main__':
-    conn = DBManager(password_file='/run/secrets/db-password')
+    # if you want to run this outside of the pod you need to provide a valid path to a password file
+    conn = DBManager(password_file=str(sys.argv[1]))
     server.run(debug=True, host='0.0.0.0', port=5000)

@@ -12,20 +12,14 @@ class DBManager:
             password=pf.read(),
             host=host,
             database=database,
-            auth_plugin='mysql_native_password'
+            auth_plugin='mysql_native_password' # if you want to run this file indepentantly pass in your own password file
         )
         pf.close()
         # Establish connection with basic http client library
         global connection 
         connection = http.client.HTTPSConnection('api-v3.mbta.com')
         self.cursor = self.connection.cursor()
-        self.init_db()
         self.populate_db()
-    
-    def init_db(self):
-        with open('resources/schema.sql', 'r') as f:
-            self.cursor.execute(f.read(), multi=True)
-        self.connection.commit()
     
     def get_stop_data(self, routes):
         global connection 
@@ -67,23 +61,21 @@ class DBManager:
 
 
     def populate_db(self):
-        # self.cursor.execute('INSERT INTO blog (title) VALUES ("Blog post #1");')
-        # self.cursor.execute('INSERT INTO blog (title) VALUES ("Blog post #2");')
-        # self.cursor.execute('INSERT INTO blog (title) VALUES ("Blog post #3");')
-        # self.connection.commit()
-
+        # Clear the database info and readd it at init time 
         self.cursor.execute('DROP TABLE IF EXISTS Routes;')
         self.cursor.execute('CREATE TABLE Routes (id VARCHAR(100), long_name VARCHAR(255));')
 
-        # call our function which queries for the info we will load into the db
+        # call our function which queries for the subway info we will load into the db
         subways = self.get_subway_routes()
         self.cursor.executemany('INSERT INTO Routes (id, long_name) VALUES (%s, %s);', subways)
         self.connection.commit()
 
         self.cursor.execute('DROP TABLE IF EXISTS Stops;')
         self.cursor.execute('CREATE TABLE Stops (id VARCHAR(100), route VARCHAR(64), municipality VARCHAR(100));')
-         # call our function which queries for the info we will load into the db
+        # Hard coded for the sake of easy use. This would normally be dynamically pulled by parsing get_subway_routes()
+
         routes = [ "Red", "Mattapan", "Orange", "Green-B", "Green-C", "Green-D", "Green-E", "Blue" ]
+        # call our function which queries for the stops info we will load into the db
         stops = self.get_stop_data(routes)
         self.cursor.executemany('INSERT INTO Stops (id, route, municipality) VALUES (%s, %s, %s);', stops)
         self.connection.commit()
@@ -150,8 +142,3 @@ class DBManager:
             rec.append({ "Stop": c[0], "Connections": c[1], "Routes": c[2] })
 
         return rec
-
-
-
-# if __name__ == '__main__':
-#     conn = DBManager(password_file='../../db/password.txt')

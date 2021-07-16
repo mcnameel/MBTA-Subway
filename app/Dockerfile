@@ -13,4 +13,4 @@ WORKDIR /src
 
 # Set the app to run on port 5000 and start the app
 EXPOSE 5000
-CMD python main/server.py
+CMD python main/server.py '/run/secrets/db-password'

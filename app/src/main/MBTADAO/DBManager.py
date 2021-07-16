@@ -1,0 +1,157 @@
+import mysql.connector
+import http.client
+import json
+
+class DBManager:
+    connection = None
+
+    def __init__(self, database='example', host="db", user="root", password_file=None):
+        pf = open(password_file, 'r')
+        self.connection = mysql.connector.connect(
+            user=user, 
+            password=pf.read(),
+            host=host,
+            database=database,
+            auth_plugin='mysql_native_password'
+        )
+        pf.close()
+        # Establish connection with basic http client library
+        global connection 
+        connection = http.client.HTTPSConnection('api-v3.mbta.com')
+        self.cursor = self.connection.cursor()
+        self.init_db()
+        self.populate_db()
+    
+    def init_db(self):
+        with open('resources/schema.sql', 'r') as f:
+            self.cursor.execute(f.read(), multi=True)
+        self.connection.commit()
+    
+    def get_stop_data(self, routes):
+        global connection 
+        db_data = []
+        for route in routes:
+            # The connection must be opened within the loop otherwise errors will occur
+            connection = http.client.HTTPSConnection('api-v3.mbta.com')
+            # For this get request we are injecting the current value of route in as the filter param
+            connection.request('GET', "/stops?filter[route]=%s" % (route))
+            response = connection.getresponse()
+            data = json.loads(response.read().decode())
+
+            # for each sub-object in the json response. These will be each stop
+            for i in data["data"]:
+                # since we filtered by the route we can add the route as one of the columns to these data
+                new_data = (i['id'], route, i['attributes']['municipality'])
+                db_data.append(new_data)
+
+            connection.close()
+        return db_data
+    
+    def get_subway_routes(self):
+        global connection
+        # Set query parameters to speficify that we want to filter for the type of rail heavy and light (0 and 1)
+        params = "?filter[type]=0,1"
+        # Put the connection string and parameters together and specify we are making a GET request
+        connection.request('GET', ('/routes' + params))
+
+        response = connection.getresponse()
+
+        # From the response, read then decode, then load as a python json readable object
+        data = json.loads(response.read().decode())
+        db_data = []
+        for i in data["data"]:
+            new_route = (i['attributes']['long_name'], i['id'])
+            db_data.append(new_route)
+
+        return db_data
+
+
+    def populate_db(self):
+        # self.cursor.execute('INSERT INTO blog (title) VALUES ("Blog post #1");')
+        # self.cursor.execute('INSERT INTO blog (title) VALUES ("Blog post #2");')
+        # self.cursor.execute('INSERT INTO blog (title) VALUES ("Blog post #3");')
+        # self.connection.commit()
+
+        self.cursor.execute('DROP TABLE IF EXISTS Routes;')
+        self.cursor.execute('CREATE TABLE Routes (id VARCHAR(100), long_name VARCHAR(255));')
+
+        # call our function which queries for the info we will load into the db
+        subways = self.get_subway_routes()
+        self.cursor.executemany('INSERT INTO Routes (id, long_name) VALUES (%s, %s);', subways)
+        self.connection.commit()
+
+        self.cursor.execute('DROP TABLE IF EXISTS Stops;')
+        self.cursor.execute('CREATE TABLE Stops (id VARCHAR(100), route VARCHAR(64), municipality VARCHAR(100));')
+         # call our function which queries for the info we will load into the db
+        routes = [ "Red", "Mattapan", "Orange", "Green-B", "Green-C", "Green-D", "Green-E", "Blue" ]
+        stops = self.get_stop_data(routes)
+        self.cursor.executemany('INSERT INTO Stops (id, route, municipality) VALUES (%s, %s, %s);', stops)
+        self.connection.commit()
+
+    def query_titles(self):
+        self.cursor.execute('SELECT title FROM blog')
+        rec = []
+        for c in self.cursor:
+            rec.append(c[0])
+        return rec
+
+    def query_subways(self):
+        self.cursor.execute('SELECT long_name FROM Routes')
+        rec = []
+        for c in self.cursor:
+            rec.append(c[0])
+        return rec
+
+    def query_max_stops_by_route(self):
+        self.cursor.execute('SELECT route, count(*) as count \
+                                FROM Stops \
+                                GROUP BY route \
+                                ORDER BY count DESC \
+                                LIMIT 1')
+        rec = []
+        for c in self.cursor:
+            rec.append({ "Route": c[0], "Stops": c[1] })
+        return rec
+
+    def query_min_stops_by_route(self):
+        self.cursor.execute('SELECT route, count(*) as count \
+                                FROM Stops \
+                                GROUP BY route \
+                                ORDER BY count ASC \
+                                LIMIT 1')
+        rec = []
+        for c in self.cursor:
+            rec.append({ "Route": c[0], "Stops": c[1] })
+        return rec
+
+    def query_stops_in_somerville(self):
+        self.cursor.execute('SELECT municipality,COUNT(*) as count \
+                                FROM Stops \
+                                WHERE municipality = "Somerville" \
+                                GROUP BY municipality \
+                                ORDER BY count DESC \
+                                LIMIT 1')
+        rec = []
+        for c in self.cursor:
+            rec.append({ "Municipality": c[0], "Stops": c[1]})
+        return rec
+
+    def query_connecting_stops(self):
+        # here we use the GROUP_CONCAT to allow us to return multiple values all from one column where the conditions are true
+        # in this case that means returning all routes as a list where the there the count of id (stop name) is greater than 1
+        # This means that there are multiple stop entries for this meaning there will be 2+ routes 
+        self.cursor.execute('SELECT id, COUNT(id) AS count, GROUP_CONCAT(route  SEPARATOR ", ") \
+                                FROM Stops \
+                                GROUP BY id \
+                                HAVING count > 1')
+        
+        rec = []
+        for c in self.cursor:
+            rec.append({ "Stop": c[0], "Connections": c[1], "Routes": c[2] })
+
+        return rec
+
+
+
+# if __name__ == '__main__':
+#     conn = DBManager(password_file='../../db/password.txt')

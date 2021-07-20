@@ -3,8 +3,6 @@ import http.client
 import json
 
 class DBManager:
-    connection = None
-
     def __init__(self, database='example', host="db", user="root", password_file=None):
         pf = open(password_file, 'r')
         self.connection = mysql.connector.connect(
@@ -15,14 +13,12 @@ class DBManager:
             auth_plugin='mysql_native_password' # if you want to run this file indepentantly pass in your own password file
         )
         pf.close()
-        # Establish connection with basic http client library
-        global connection 
-        connection = http.client.HTTPSConnection('api-v3.mbta.com')
+
         self.cursor = self.connection.cursor()
         self.populate_db()
     
     def get_stop_data(self, routes):
-        global connection 
+        connection = None 
         db_data = []
         for route in routes:
             # The connection must be opened within the loop otherwise errors will occur
@@ -42,7 +38,8 @@ class DBManager:
         return db_data
     
     def get_subway_routes(self):
-        global connection
+        # it is better to have a basic http client connection be local because it needs to be opened and closed for each request in python to flush the buffer
+        connection = http.client.HTTPSConnection('api-v3.mbta.com')
         # Set query parameters to speficify that we want to filter for the type of rail heavy and light (0 and 1)
         params = "?filter[type]=0,1"
         # Put the connection string and parameters together and specify we are making a GET request
@@ -72,9 +69,10 @@ class DBManager:
 
         self.cursor.execute('DROP TABLE IF EXISTS Stops;')
         self.cursor.execute('CREATE TABLE Stops (id VARCHAR(100), route VARCHAR(64), municipality VARCHAR(100));')
+        
         # Hard coded for the sake of easy use. This would normally be dynamically pulled by parsing get_subway_routes()
-
         routes = [ "Red", "Mattapan", "Orange", "Green-B", "Green-C", "Green-D", "Green-E", "Blue" ]
+        # global routes
         # call our function which queries for the stops info we will load into the db
         stops = self.get_stop_data(routes)
         self.cursor.executemany('INSERT INTO Stops (id, route, municipality) VALUES (%s, %s, %s);', stops)
